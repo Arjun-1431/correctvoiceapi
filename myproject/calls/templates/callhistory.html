@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Call History</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-100 to-blue-300">
+    <div class="bg-white p-6 rounded-2xl shadow-2xl w-3/4">
+        <h2 class="text-3xl font-bold text-gray-800 mb-4">📜 Call History</h2>
+        <table class="min-w-full bg-white border border-gray-300">
+            <thead>
+                <tr>
+                    <th class="py-2 px-4 border">#</th>
+                    <th class="py-2 px-4 border">📞 Number</th>
+                    <th class="py-2 px-4 border">⏳ Duration</th>
+                </tr>
+            </thead>
+            <tbody id="callHistoryTable" class="text-center">
+                <!-- Call history data will be inserted here -->
+            </tbody>
+        </table>
+        <button class="btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-full mt-4" onclick="goBack()">⬅ Back</button>
+    </div>
+
+    <script>
+        fetch('/get_call_history/')
+            .then(response => response.json())
+            .then(calls => {
+                const historyTable = document.getElementById("callHistoryTable");
+                historyTable.innerHTML = calls.map((call, index) => `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td>${call.phone_number || 'N/A'}</td>
+                        <td>${call.duration || 'N/A'}</td>
+                    </tr>
+                `).join('');
+            });
+
+        function goBack() {
+            window.location.href = '/';
+        }
+    </script>
+</body>
+</html>

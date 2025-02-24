@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Twilio Dialer with Conference</title>
+    <script src="https://sdk.twilio.com/js/client/v1.14/twilio.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-100 to-blue-300">
+    <div class="flex justify-center items-start space-x-6">
+        <div class="bg-white p-6 rounded-2xl shadow-2xl w-96 text-center">
+            <h2 class="text-3xl font-bold text-gray-800 mb-4">📞 Voice Calling</h2>
+            <div id="balanceDisplay" class="text-2xl font-bold text-gray-800 mb-4">
+                💰 Balance: <span id="balanceAmount">Loading...</span>
+            </div>
+                        <input type="text" id="phoneNumber" class="w-full p-3 text-lg border-2 border-gray-300 rounded-full text-center focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter Number">
+            <div class="grid grid-cols-3 gap-3 my-4">
+                <button class="btn" onclick="addDigit('1')">1</button>
+                <button class="btn" onclick="addDigit('2')">2</button>
+                <button class="btn" onclick="addDigit('3')">3</button>
+                <button class="btn" onclick="addDigit('4')">4</button>
+                <button class="btn" onclick="addDigit('5')">5</button>
+                <button class="btn" onclick="addDigit('6')">6</button>
+                <button class="btn" onclick="addDigit('7')">7</button>
+                <button class="btn" onclick="addDigit('8')">8</button>
+                <button class="btn" onclick="addDigit('9')">9</button>
+                <button class="btn" onclick="addDigit('*')">*</button>
+                <button class="btn" onclick="addDigit('0')">0</button>
+                <button class="btn" onclick="addDigit('#')">#</button>
+                <button class="btn" onclick="addDigit('+')">+</button>
+            </div>
+            <div class="flex justify-between">
+                <button class="btn bg-green-500 hover:bg-green-600" onclick="startCall()">📞 Start</button>
+                <button class="btn bg-red-500 hover:bg-red-600" onclick="endCall()">⛔ End</button>
+            </div>
+            <button class="btn w-full bg-gray-500 hover:bg-gray-600 mt-3" onclick="clearNumber()">🗑 Clear</button>
+            <button class="btn w-full bg-blue-500 hover:bg-blue-600 mt-3" onclick="navigateToCallHistory()">📜 Call History</button>
+        </div>
+        <div class="mt-6 bg-white p-4 rounded-2xl shadow-lg w-96">
+            <h3 class="text-xl font-bold text-gray-800 mb-3">👥 Conference Participants</h3>
+            <ul id="conferenceParticipants" class="text-gray-700 space-y-2"></ul>
+        </div>
+    </div>
+    <script>
+        let device, conferenceConnections = [];
+
+        function navigateToCallHistory() {
+            window.location.href = '/call_history/';
+        }
+
+
+        function fetchBalance() {
+        fetch('/get_balance/')
+            .then(response => response.json())
+            .then(data => {
+                const balanceElement = document.getElementById('balanceAmount');
+                if (data.balance) {
+                    balanceElement.textContent = data.balance;
+                } else {
+                    balanceElement.textContent = '0.00';
+                }
+            })
+            .catch(error => {
+                console.error('⚠ Error fetching balance:', error);
+                document.getElementById('balanceAmount').textContent = 'Error';
+            });
+    }
+
+        function setupTwilioDevice(token) {
+            device = new Twilio.Device();
+            device.setup(token, { debug: true });
+        }
+
+        function addDigit(digit) {
+            document.getElementById("phoneNumber").value += digit;
+        }
+
+        function clearNumber() {
+            document.getElementById("phoneNumber").value = "";
+        }
+
+        function startCall() {
+            const phoneNumber = document.getElementById("phoneNumber").value.trim();
+            if (!phoneNumber) {
+                alert("❌ Please enter a valid number.");
+                return;
+            }
+
+            fetch('/get_twilio_token/')
+                .then(response => response.json())
+                .then(data => {
+                    setupTwilioDevice(data.token);
+                    setTimeout(() => {
+                        if (device) {
+                            let connection = device.connect({ To: phoneNumber });
+                            let startTime = Date.now();
+
+                            connection.on('accept', function () {
+                                conferenceConnections.push({ number: phoneNumber, connection, startTime, timerId: null });
+                                saveCallDetails(phoneNumber, 'started', startTime);
+                                updateConferenceParticipants();
+                            });
+
+                            connection.on('disconnect', function () {
+                                conferenceConnections = conferenceConnections.filter(conn => conn.number !== phoneNumber);
+                                let endTime = Date.now();  // Add this line
+    let duration = endTime - startTime;
+                                saveCallDetails(phoneNumber, 'ended', endTime);
+                                updateConferenceParticipants();
+                            });
+                        }
+                    }, 2000);
+                })
+                .catch(error => alert("⚠ Token Fetch Error: " + error.message));
+        }
+        function saveCallDetails(number, status, timestamp) {
+    fetch('/save_call_details/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCSRFToken()
+        },
+        body: JSON.stringify({ number, status, timestamp })
+    }).catch(error => console.error('⚠ Save Call Error:', error));
+}
+
+
+        function getCSRFToken() {
+            const csrfToken = document.cookie.split('; ').find(row => row.startsWith('csrftoken='));
+            return csrfToken ? csrfToken.split('=')[1] : '';
+        }
+        function updateConferenceParticipants() {
+            let participantsList = document.getElementById("conferenceParticipants");
+            participantsList.innerHTML = "";
+
+            if (conferenceConnections.length > 0) {
+                conferenceConnections.forEach(conn => {
+                    if (!conn.timerId) {
+                        conn.timerId = setInterval(() => updateTimer(conn), 1000);
+                    }
+                    let listItem = document.createElement("li");
+                    listItem.id = `timer-${conn.number}`;
+                    listItem.innerHTML = `📞 <strong>${conn.number}</strong> - ⏳ <span id='time-${conn.number}'>00:00</span>`;
+                    listItem.classList.add("p-2", "border-b", "border-gray-300");
+                    participantsList.appendChild(listItem);
+                });
+            } else {
+                participantsList.innerHTML = "<li class='text-gray-500'>No active participants</li>";
+            }
+        }
+
+        function updateTimer(conn) {
+            let elapsed = Math.floor((Date.now() - conn.startTime) / 1000);
+            let minutes = Math.floor(elapsed / 60);
+            let seconds = elapsed % 60;
+            let timerElement = document.getElementById(`time-${conn.number}`);
+            if (timerElement) {
+                timerElement.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            }
+        }
+
+        function endCall() {
+            conferenceConnections.forEach(conn => {
+                conn.connection.disconnect();
+                clearInterval(conn.timerId);
+            });
+            conferenceConnections = [];
+            updateConferenceParticipants();
+        }
+
+        document.addEventListener('DOMContentLoaded', fetchBalance);
+
+    </script>
+</body>
+</html>
